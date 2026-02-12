@@ -1,35 +1,49 @@
-using UnityEngine;
-using UnityEngine.Events;
-
-namespace SilentHillStyle.Interaction
+namespace SilentHill2.Interaction
 {
+    using UnityEngine;
+
     /// <summary>
-    /// Minimal pickup interaction for prototype boxes.
+    /// A concrete <see cref="IInteractable"/> for items the player can pick up.
+    /// The item is deactivated (or optionally destroyed) on collection and
+    /// registered with the instigator's <see cref="PickupInventory"/> if one exists.
     /// </summary>
-    public sealed class PickupInteractable : MonoBehaviour, IInteractable
+    [DisallowMultipleComponent]
+    public class PickupInteractable : MonoBehaviour, IInteractable
     {
-        [SerializeField] private string displayName = "Pickup";
-        [SerializeField] private bool destroyOnPickup = true;
-        [SerializeField] private UnityEvent onPickedUp;
+        [Tooltip("Label shown in the interaction prompt (e.g. \"Pick up\", \"Take\").")]
+        [SerializeField] private string interactionLabel = "Pick up";
 
-        private bool picked;
+        [Tooltip("Optional transform used as the detection target point. " +
+                 "If unset, the object's own transform is used.")]
+        [SerializeField] private Transform interactionPoint;
 
-        public string DisplayName => displayName;
+        [Tooltip("Destroy the GameObject on pickup instead of deactivating it.")]
+        [SerializeField] private bool destroyOnPickup;
 
-        public bool CanInteract(InteractorContext context)
+        private bool _pickedUp;
+
+        // --- IInteractable ---
+
+        public Transform InteractionPoint =>
+            interactionPoint != null ? interactionPoint : transform;
+
+        public string InteractionLabel => interactionLabel;
+
+        public bool IsAvailable => !_pickedUp && isActiveAndEnabled;
+
+        public bool CanInteract(InteractionContext context) => IsAvailable;
+
+        public void Interact(InteractionContext context)
         {
-            return !picked;
-        }
+            if (_pickedUp) return;
+            _pickedUp = true;
 
-        public void Interact(InteractorContext context)
-        {
-            if (picked)
+            // Register with the instigator's inventory if one is present.
+            if (context.Instigator != null
+                && context.Instigator.TryGetComponent(out PickupInventory inventory))
             {
-                return;
+                inventory.RegisterPickup(this);
             }
-
-            picked = true;
-            onPickedUp?.Invoke();
 
             if (destroyOnPickup)
             {
@@ -38,6 +52,17 @@ namespace SilentHillStyle.Interaction
             else
             {
                 gameObject.SetActive(false);
+            }
+        }
+
+        private void Reset()
+        {
+            // When first attached in the editor, ensure the object has a collider
+            // so the InteractionSensor's spherecast can detect it.
+            if (GetComponent<Collider>() == null)
+            {
+                var box = gameObject.AddComponent<BoxCollider>();
+                box.isTrigger = false;
             }
         }
     }
